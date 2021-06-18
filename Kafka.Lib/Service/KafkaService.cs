@@ -45,7 +45,12 @@ namespace Kafka.Service
                 StatisticsIntervalMs = 5000,
                 SessionTimeoutMs = 6000,
                 AutoOffsetReset = AutoOffsetReset.Earliest,
-                EnablePartitionEof = true
+                EnablePartitionEof = true,
+
+                //SaslMechanism = SaslMechanism.Plain,
+                //SaslUsername = "",
+                //SaslPassword = "",
+                //SecurityProtocol = SecurityProtocol.SaslPlaintext,
             };
 
             using var consumer = new ConsumerBuilder<Ignore, string>(config)
