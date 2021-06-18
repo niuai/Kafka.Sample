@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Kafka.Sample.Interface
+namespace Kafka.Interface
 {
     public interface IKafkaService
     {

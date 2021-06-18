@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace Kafka.Sample.Models
+namespace Kafka.Models
 {
     public class TestEventData
     {

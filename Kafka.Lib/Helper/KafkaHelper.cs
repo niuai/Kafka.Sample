@@ -5,7 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Kafka.Sample.Helper
+namespace Kafka.Helper
 {
     public class KafkaHelper
     {

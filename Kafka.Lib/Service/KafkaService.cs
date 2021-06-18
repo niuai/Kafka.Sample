@@ -1,20 +1,31 @@
 ﻿using Confluent.Kafka;
-using Kafka.Sample.Interface;
+using Kafka.Interface;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Kafka.Sample.Service
+namespace Kafka.Service
 {
     public class KafkaService : IKafkaService
     {
+        private readonly IConfiguration _configuration;
+        private readonly ILogger _logger;
+
+        public KafkaService(IConfiguration configuration, ILogger<KafkaService> logger)
+        {
+            _configuration = configuration;
+            _logger = logger;
+        }
+
         public async Task PublishAsync<TMessage>(string topicName, TMessage message) where TMessage : class
         {
             var config = new ProducerConfig
             {
-                BootstrapServers = "127.0.0.1:9092"
+                BootstrapServers = _configuration["Kafka:BootstrapServers"]
             };
             using var producer = new ProducerBuilder<string, string>(config).Build();
             await producer.ProduceAsync(topicName, new Message<string, string>
@@ -28,36 +39,36 @@ namespace Kafka.Sample.Service
         {
             var config = new ConsumerConfig
             {
-                BootstrapServers = "127.0.0.1:9092",
-                GroupId = "crow-consumer",
+                BootstrapServers = _configuration["Kafka:BootstrapServers"],
+                GroupId = _configuration["Kafka:ConsumerGroupId"],
                 EnableAutoCommit = false,
                 StatisticsIntervalMs = 5000,
                 SessionTimeoutMs = 6000,
                 AutoOffsetReset = AutoOffsetReset.Earliest,
                 EnablePartitionEof = true
             };
-            //const int commitPeriod = 5;
+
             using var consumer = new ConsumerBuilder<Ignore, string>(config)
-                                 .SetErrorHandler((_, e) =>
-                                 {
-                                     Console.WriteLine($"Error: {e.Reason}");
-                                 })
-                                 .SetStatisticsHandler((_, json) =>
-                                 {
-                                     Console.WriteLine($" - {DateTime.Now:yyyy-MM-dd HH:mm:ss} > 消息监听中..");
-                                 })
-                                 .SetPartitionsAssignedHandler((c, partitions) =>
-                                 {
-                                     string partitionsStr = string.Join(", ", partitions);
-                                     Console.WriteLine($" - 分配的 kafka 分区: {partitionsStr}");
-                                 })
-                                 .SetPartitionsRevokedHandler((c, partitions) =>
-                                 {
-                                     string partitionsStr = string.Join(", ", partitions);
-                                     Console.WriteLine($" - 回收了 kafka 的分区: {partitionsStr}");
-                                 })
-                                 .Build();
+                .SetErrorHandler((_, e) =>
+                {
+                    _logger.LogError($"Error: {e.Reason}");
+                })
+                .SetStatisticsHandler((_, json) =>
+                {
+                    _logger.LogDebug($" - {DateTime.Now:yyyy-MM-dd HH:mm:ss} > listening kafka...");
+                })
+                .SetPartitionsAssignedHandler((c, partitions) =>
+                {
+                    _logger.LogTrace($" - Assign kafka partitions: {string.Join(", ", partitions)}");
+                })
+                .SetPartitionsRevokedHandler((c, partitions) =>
+                {
+                    _logger.LogTrace($" - Recovery kafka partitions: {string.Join(", ", partitions)}");
+                })
+                .Build();
+
             consumer.Subscribe(topics);
+
             try
             {
                 while (true)
@@ -65,10 +76,12 @@ namespace Kafka.Sample.Service
                     try
                     {
                         var consumeResult = consumer.Consume(cancellationToken);
-                        Console.WriteLine($"Consumed message '{consumeResult.Message?.Value}' at: '{consumeResult?.TopicPartitionOffset}'.");
+
+                        _logger.LogTrace($"Consumed message '{consumeResult.Message?.Value}' at: '{consumeResult?.TopicPartitionOffset}'.");
+
                         if (consumeResult.IsPartitionEOF)
                         {
-                            Console.WriteLine($" - {DateTime.Now:yyyy-MM-dd HH:mm:ss} 已经到底了：{consumeResult.Topic}, partition {consumeResult.Partition}, offset {consumeResult.Offset}.");
+                            _logger.LogTrace($" - {DateTime.Now:yyyy-MM-dd HH:mm:ss} kafka has been read to end: {consumeResult.Topic}, partition {consumeResult.Partition}, offset {consumeResult.Offset}.");
                             continue;
                         }
                         TMessage messageResult = null;
@@ -78,8 +91,8 @@ namespace Kafka.Sample.Service
                         }
                         catch (Exception ex)
                         {
-                            var errorMessage = $" - {DateTime.Now:yyyy-MM-dd HH:mm:ss}【Exception 消息反序列化失败，Value：{consumeResult.Message.Value}】 ：{ex.StackTrace?.ToString()}";
-                            Console.WriteLine(errorMessage);
+                            var errorMessage = $" - {DateTime.Now:yyyy-MM-dd HH:mm:ss}[Exception: DeserializeObject error, value: {consumeResult.Message.Value}]: {ex.StackTrace?.ToString()}";
+                            _logger.LogError(errorMessage);
                             messageResult = null;
                         }
                         if (messageResult != null/* && consumeResult.Offset % commitPeriod == 0*/)
@@ -91,23 +104,23 @@ namespace Kafka.Sample.Service
                             }
                             catch (KafkaException e)
                             {
-                                Console.WriteLine(e.Message);
+                                _logger.LogError(e, e.Message);
                             }
                         }
                     }
                     catch (ConsumeException e)
                     {
-                        Console.WriteLine($"Consume error: {e.Error.Reason}");
+                        _logger.LogError(e, $"Consume error: {e.Error.Reason}");
                     }
                 }
             }
             catch (OperationCanceledException)
             {
-                Console.WriteLine("Closing consumer.");
+                _logger.LogError("Closing consumer.");
                 consumer.Close();
             }
+
             await Task.CompletedTask;
         }
     }
-
 }
